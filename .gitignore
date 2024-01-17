@@ -1,0 +1,5 @@
+results/
+model/store/
+problem/store/
+__pycache__/
+.idea/
