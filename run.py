@@ -3,6 +3,8 @@ import os
 import config
 
 
+from task.Alg_Task import Alg_Task
+
 from trainer.GaMetaTrainer import GaMetaTrainer
 
 
@@ -15,8 +17,8 @@ if __name__ == '__main__':
     new_tasks = False
     checkpoint_path_actor = None  # os.path.join(config.models_dir, 'universal_crossover_actor_20')  # None
     checkpoint_path_critic = None  # os.path.join(config.models_dir, 'universal_crossover_critic_20')  # None
-    task_sample_size = 4
-    task_epochs = 100
+    task_sample_size = 1
+    task_epochs = 10
     trainer = GaMetaTrainer(
         num_task_variations=num_task_variations,
         new_tasks=new_tasks,
@@ -26,6 +28,26 @@ if __name__ == '__main__':
         task_epochs=task_epochs
     )
     trainer.train()
+
+
+
+
+
+
+    # test_task = trainer.val_tasks[0]
+    # task_runner = Alg_Task(
+    #     run_num=0,
+    #     barrier=None,
+    #     problem=test_task,
+    #     limit=1000,
+    #     actor_load_path=None,
+    #     critic_load_path=None,
+    #     c_type='uniform',
+    # )
+    # results = task_runner.run()
+    # print(results)
+
+
 
 
 

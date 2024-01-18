@@ -3,6 +3,46 @@ import config
 import os
 
 
+
+
+
+
+# ---------------------------------------
+# Large Universal Crossover
+# ---------------------------------------
+
+
+from model.LargeUniversalCrossover import LargeUniversalCrossover, LargeUniversalCrossoverCritic
+
+def get_large_universal_crossover(checkpoint_path_actor=None, checkpoint_path_critic=None):
+    pop_size = 20
+    design_len = 60
+    pop_input_len = design_len * pop_size + pop_size
+
+    actor_model = LargeUniversalCrossover()
+    decisions = tf.zeros((1, design_len))
+    parents = tf.zeros((1, pop_input_len))
+    pop = tf.zeros((1, pop_input_len))
+    actor_model([decisions, parents, pop])
+
+    critic_model = LargeUniversalCrossoverCritic()
+    decisions = tf.zeros((1, design_len + 1))
+    parents = tf.zeros((1, pop_input_len))
+    pop = tf.zeros((1, pop_input_len))
+    critic_model([decisions, parents, pop])
+
+    # Load Weights
+    if checkpoint_path_actor:
+        actor_model.load_weights(checkpoint_path_actor).expect_partial()
+    if checkpoint_path_critic:
+        critic_model.load_weights(checkpoint_path_critic).expect_partial()
+
+    # actor_model.summary()
+
+    return actor_model, critic_model
+
+
+
 # ---------------------------------------
 # Universal Crossover
 # ---------------------------------------

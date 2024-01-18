@@ -9,7 +9,7 @@ import config
 import seaborn as sns
 import matplotlib.pyplot as plt
 import os
-from model import get_universal_crossover, get_fast_universal_crossover
+from model import get_large_universal_crossover
 from pymoo.indicators.hv import HV
 from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
 from pymoo.operators.selection.tournament import compare
@@ -25,13 +25,11 @@ from task.Alg_Task import Alg_Task
 
 
 
-class GA_Task(AbstractTask):
+class LGA_Task(AbstractTask):
 
-    def __init__(self, run_num=0, barrier=None, problem=None, limit=50, actor_load_path=None, critic_load_path=None, debug=False, c_type='uniform', start_nfe=0):
-        super(GA_Task, self).__init__(run_num, barrier, problem, limit, actor_load_path, critic_load_path)
+    def __init__(self, run_num=0, barrier=None, problem=None, limit=50, actor_load_path=None, critic_load_path=None, debug=False):
+        super(LGA_Task, self).__init__(run_num, barrier, problem, limit, actor_load_path, critic_load_path)
         self.debug = debug
-        self.c_type = c_type
-        self.start_nfe = start_nfe
 
         # HV
         self.ref_point = np.array([0, 2])  # value, weight
@@ -41,10 +39,10 @@ class GA_Task(AbstractTask):
         self.unique_designs_vals = []
 
         # Algorithm parameters
-        self.pop_size = 30  # 32 FU_NSGA2, 10 U_NSGA2
+        self.pop_size = 20  # 32 FU_NSGA2, 10 U_NSGA2
         self.offspring_size = 100  # 32 FU_NSGA2, 30 U_NSGA2
         self.mini_batch_size = 100
-        self.num_cross_obs_designs = 10
+        self.num_cross_obs_designs = 20
         self.max_nfe = 5000
         self.nfe = 0
         self.limit = limit
@@ -55,10 +53,10 @@ class GA_Task(AbstractTask):
         self.lam = 0.95
         self.clip_ratio = 0.2
         self.target_kl = 0.01
-        self.entropy_coef = 0.1
+        self.entropy_coef = 0.01
         self.counter = 0
         self.decision_start_token_id = 1
-        self.num_actions = 2
+        self.num_actions = 20
 
         # Population
         self.population = []
@@ -105,7 +103,7 @@ class GA_Task(AbstractTask):
         if self.critic_optimizer is None:
             self.critic_optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=self.critic_learning_rate)
 
-        self.c_actor, self.c_critic = get_universal_crossover(self.actor_load_path, self.critic_load_path)
+        self.c_actor, self.c_critic = get_large_universal_crossover(self.actor_load_path, self.critic_load_path)
 
     def run(self):
         print('--> RUNNING GA TASK:', self.run_num)
@@ -114,14 +112,10 @@ class GA_Task(AbstractTask):
         self.init_population()
         self.eval_population()
 
-        training_started = self.nfe >= self.start_nfe
         terminated = False
         counter = 0
         while terminated is False and self.nfe < self.max_nfe:
             # print('EPOCH', counter, '/', self.limit)
-            if training_started is False and self.nfe >= self.start_nfe:
-                training_started = True
-                print('--> Training Started:', self.nfe, '/', self.start_nfe)
 
             # 1. Create offspring
             epoch_info = self.create_offspring()
@@ -135,11 +129,10 @@ class GA_Task(AbstractTask):
             # 4. Log iteration
             self.record(epoch_info)
             self.activate_barrier()
+            counter += 1
 
-            if self.nfe >= self.start_nfe:
-                counter += 1
-                if counter >= self.limit:
-                    terminated = True
+            if counter >= self.limit:
+                terminated = True
 
         # Save the parameters of the current actor and critic
         self.c_actor.save_weights(self.actor_save_path)
@@ -160,14 +153,12 @@ class GA_Task(AbstractTask):
     def init_population(self):
         self.population = []
         for x in range(self.pop_size):
-            design = Design(evaluator=self.problem, num_bits=self.steps_per_design, c_type=self.c_type)
+            design = Design(evaluator=self.problem, num_bits=self.steps_per_design)
             self.population.append(design)
 
     def eval_population(self):
         evals = []
         for design in self.population:
-            if self.nfe < self.start_nfe and design.evaluated is False:
-                self.nfe += 1
             evals.append(design.evaluate())
         return evals
 
@@ -258,10 +249,7 @@ class GA_Task(AbstractTask):
             ])
 
         # Create offspring
-        if self.nfe < self.start_nfe:
-            offspring, epoch_info = self.crossover_parents_init(pairs)
-        else:
-            offspring, epoch_info = self.crossover_parents(pairs)
+        offspring, epoch_info = self.crossover_parents(pairs)
         self.population.extend(offspring)
         return epoch_info
 
@@ -269,18 +257,6 @@ class GA_Task(AbstractTask):
         mini_batch = parent_pairs
         children, epoch_info = self.run_mini_batch(mini_batch)
         return children, epoch_info
-
-    def crossover_parents_init(self, parent_pairs):
-        offspring = []
-        for pair in parent_pairs:
-            parent1 = pair[0]
-            parent2 = pair[1]
-            child = Design(evaluator=self.problem, c_type=self.c_type)
-            child.crossover(parent1, parent2)
-            child.mutate()
-            offspring.append(child)
-        return offspring, None
-
 
     # -------------------------------------
     # PPO Functions
@@ -290,7 +266,24 @@ class GA_Task(AbstractTask):
         buffer = CrossoverBuffer(self.steps_per_design, self.mini_batch_size)
         return buffer
 
-    def get_cross_obs(self, p1, p2):
+    def get_cross_obs(self):
+        obs_pop = self.population
+        if len(self.population) > self.num_cross_obs_designs:
+            obs_pop = self.population[:self.num_cross_obs_designs]
+
+        pop_vector = []
+        pop_pos_vector = []
+        for idx, design in enumerate(obs_pop, start=0):
+            pop_vector.append(2)
+            pop_vector.extend(deepcopy(design.vector))
+            pop_pos_vector.extend([idx + 1 for _ in range(len(design.vector) + 1)])
+
+        return pop_vector, pop_pos_vector
+
+
+
+
+    def get_cross_obs2(self, p1, p2):
         p1_str = p1.get_vector_str()
         p2_str = p2.get_vector_str()
         pop_strs = [design.get_vector_str() for design in self.population]
@@ -347,9 +340,7 @@ class GA_Task(AbstractTask):
         parent_obs = []  # (batch, design_len * pop_size + pop_size)
         parent_obs_pos = []
         for pair in mini_batch:
-            p1 = pair[0]
-            p2 = pair[1]
-            pop_vector, pop_pos_vector = self.get_cross_obs(p1, p2)
+            pop_vector, pop_pos_vector = self.get_cross_obs()
             parent_obs.append(pop_vector)
             parent_obs_pos.append(pop_pos_vector)
 
@@ -370,19 +361,12 @@ class GA_Task(AbstractTask):
                 # Get action (either inherit from parent a or b)
                 all_actions[idx].append(deepcopy(act))
                 ppair = mini_batch[idx]
-                m_action = float(deepcopy(act))
+                m_action = int(deepcopy(act))
 
                 # Get parent bit
-                p1_bit = ppair[0].vector[t]
-                p2_bit = ppair[1].vector[t]
-                if m_action == 0:
-                    m_bit = p1_bit
-                elif m_action == 1:
-                    m_bit = p2_bit
-                else:
-                    raise ValueError('--> INVALID ACTION VALUE:', act)
-                designs[idx].append(m_bit)
-                observation_new[idx].append(m_bit + 2)
+                p_bit = self.population[m_action].vector[t]
+                designs[idx].append(p_bit)
+                observation_new[idx].append(p_bit + 2)
 
             # 3. Determine reward for each batch element
             rewards = []
@@ -455,9 +439,6 @@ class GA_Task(AbstractTask):
         critic_observation_buffer = tf.convert_to_tensor(critic_observation_buffer, dtype=tf.float32)
         return_buffer = tf.convert_to_tensor(return_buffer, dtype=tf.float32)  # (batch, seq_len, num_objectives)
 
-
-
-
         curr_time = time.time()
         policy_update_itr = 0
         for i in range(self.train_actor_iterations):
@@ -526,7 +507,7 @@ class GA_Task(AbstractTask):
                 if idx == pop_design_idx:
                     design_reward = advantage
                     crowding_reward = crowding_of_front[i]
-        design = Design(design_vector=[int(i) for i in bitstr], evaluator=self.problem, num_bits=self.steps_per_design, c_type=self.c_type)
+        design = Design(design_vector=[int(i) for i in bitstr], evaluator=self.problem, num_bits=self.steps_per_design)
         design.set_objectives(pop_design[0], pop_design[1])
         if bitstr not in self.unique_designs:
             self.unique_designs.add(bitstr)
@@ -549,8 +530,8 @@ class GA_Task(AbstractTask):
 
     @tf.function(input_signature=[
         tf.TensorSpec(shape=(100, None), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
+        tf.TensorSpec(shape=(100, 1220), dtype=tf.float32),
+        tf.TensorSpec(shape=(100, 1220), dtype=tf.float32),
         tf.TensorSpec(shape=(), dtype=tf.int32)
     ])
     def _sample_actor(self, observation_input, parent_input, parent_pos_input, inf_idx):
@@ -580,8 +561,8 @@ class GA_Task(AbstractTask):
 
     @tf.function(input_signature=[
         tf.TensorSpec(shape=(100, None), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
+        tf.TensorSpec(shape=(100, 1220), dtype=tf.float32),
+        tf.TensorSpec(shape=(100, 1220), dtype=tf.float32),
         tf.TensorSpec(shape=(), dtype=tf.int32)
     ])
     def _sample_critic(self, observation_input, parent_input, parent_pos_input, inf_idx):
@@ -595,8 +576,8 @@ class GA_Task(AbstractTask):
         tf.TensorSpec(shape=(100, 60), dtype=tf.int32),
         tf.TensorSpec(shape=(100, 60), dtype=tf.float32),
         tf.TensorSpec(shape=(100, 60), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32)
+        tf.TensorSpec(shape=(100, 1220), dtype=tf.float32),
+        tf.TensorSpec(shape=(100, 1220), dtype=tf.float32)
     ])
     def train_actor(
             self,
@@ -662,8 +643,8 @@ class GA_Task(AbstractTask):
     @tf.function(input_signature=[
         tf.TensorSpec(shape=(100, 61), dtype=tf.float32),
         tf.TensorSpec(shape=(100, 61), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32)
+        tf.TensorSpec(shape=(100, 1220), dtype=tf.float32),
+        tf.TensorSpec(shape=(100, 1220), dtype=tf.float32)
     ])
     def train_critic(
             self,
@@ -689,8 +670,8 @@ class GA_Task(AbstractTask):
     @tf.function(input_signature=[
         tf.TensorSpec(shape=(100, 61), dtype=tf.float32),
         tf.TensorSpec(shape=(100, 61), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32)
+        tf.TensorSpec(shape=(100, 1220), dtype=tf.float32),
+        tf.TensorSpec(shape=(100, 1220), dtype=tf.float32)
     ])  # add num_iterations to the signature
     def train_critic_loop(self, observation_buffer, return_buffer, parent_buffer, pop_vector):
         total_value_loss = 0.0
@@ -729,8 +710,6 @@ class GA_Task(AbstractTask):
     # ---------------------------------
 
     def record(self, epoch_info):
-        if epoch_info is None:
-            return
 
         # Record new epoch / print
         if self.debug is True:
@@ -827,27 +806,17 @@ class GA_Task(AbstractTask):
         attention_vector_mean_heads = attention_mean_across_heads[batch_index, query_index, :]
         attention_vector_mean_heads /= tf.reduce_sum(attention_vector_mean_heads)  # normalize
 
-
         p1 = parent_pair[0]
         p2 = parent_pair[1]
         pop_designs = [design.get_vector_str() for design in self.population]
         p1_idx_pop = pop_designs.index(p1.get_vector_str())
         p2_idx_pop = pop_designs.index(p2.get_vector_str())
 
-        p_obs = parent_obs[batch_index]
-        p1_idx = -1
-        if 3 in p_obs:
-            p1_idx = p_obs.index(3)
-
-        p2_idx = -1
-        if 4 in p_obs:
-            p2_idx = p_obs.index(4)
-
         plt.figure(figsize=(15, 4))  # Wider figure
         attention_vector = attn_scores[batch_index, head_index, query_index]
         attention_vector = attention_vector / tf.reduce_sum(attention_vector, axis=-1, keepdims=True)
         ax = sns.heatmap(attention_vector_mean_heads.numpy()[None, :], cmap='viridis', cbar=True)
-        plt.title(f'Attention Map (Averaged over heads, Query {query_index}) \n Parent 1: {p1_idx} {p1_idx_pop} | Parent 2: {p2_idx} {p2_idx_pop}')
+        plt.title(f'Attention Map (Averaged over heads, Query {query_index}) \n Parent 1: {p1_idx_pop} | Parent 2: {p2_idx_pop}')
         plt.xlabel('Key Positions')
         plt.ylabel('Query Positions')
 

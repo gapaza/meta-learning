@@ -11,9 +11,9 @@ import numpy as np
 # Problems
 # ------------------------------------
 
-from problem.multi_objective.AbstractKnapsack import AbstractKnapsack
+# from problem.multi_objective.AbstractKnapsack import AbstractKnapsack
 from problem.multi_objective.SecondOrderSynergyKnapsack import SecondOrderSynergyKnapsack
-from problem.multi_objective.FirstOrderSynergyKnapsack import FirstOrderSynergyKnapsack
+from problem.multi_objective.FirstOrderSynergyKnapsack import FirstOrderSynergyKnapsack as AbstractKnapsack
 from problem.multi_objective.AbstractMultiKnapsack import AbstractMultiKnapsack
 
 # ------------------------------------
@@ -21,7 +21,11 @@ from problem.multi_objective.AbstractMultiKnapsack import AbstractMultiKnapsack
 # ------------------------------------
 
 from task.GA_Task import GA_Task
-from model import get_universal_crossover, get_fast_universal_crossover
+# from task.LGA_Task import LGA_Task as GA_Task
+
+
+from model import get_universal_crossover
+# from model import get_large_universal_crossover as get_universal_crossover
 
 
 
@@ -156,6 +160,7 @@ class GaMetaTrainer:
         all_actor_params = []
         all_critic_params = []
         for task, task_idx in zip(train_tasks, task_indices):
+            start_nfe = random.randint(0, 5000)
             debug = len(all_algs) == 0
             alg = GA_Task(
                 run_num=task_idx,
@@ -163,7 +168,9 @@ class GaMetaTrainer:
                 limit=self.task_epochs,
                 actor_load_path=actor_save_path,
                 critic_load_path=critic_save_path,
-                debug=debug
+                debug=debug,
+                c_type='uniform',
+                start_nfe=start_nfe,
             )
             all_algs.append(alg)
         for alg in all_algs:
@@ -211,7 +218,6 @@ class GaMetaTrainer:
         actor_save_path, critic_save_path = self.save_models()
 
         actor_eval, critic_eval = get_universal_crossover()
-        # actor_eval, critic_eval = get_fast_universal_crossover()
         actor_eval.load_target_weights(self.actor, trainable=True)
         critic_eval.load_target_weights(self.critic, trainable=True)
 

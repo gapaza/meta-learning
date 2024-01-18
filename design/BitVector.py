@@ -6,9 +6,10 @@ import time
 
 class BitVector:
 
-    def __init__(self, design_vector=None, evaluator=None, num_bits=60):
+    def __init__(self, design_vector=None, evaluator=None, num_bits=60, c_type='uniform'):
         self.evaluator = evaluator
         self.num_bits = num_bits
+        self.c_type = c_type  # values: random, point, uniform
 
         self.vector = design_vector
         if not design_vector:
@@ -46,10 +47,9 @@ class BitVector:
         self.objectives = [science, cost]
         self.evaluated = True
 
-        ##################
-        ### Evaluation ###
-        ##################
-
+    ##################
+    ### Evaluation ###
+    ##################
 
     def evaluate(self):
         if self.evaluated is True:
@@ -67,7 +67,7 @@ class BitVector:
     #################
 
     def crossover(self, mother_d, father_d):
-        c_type = 'uniform'  # values: random, point, uniform
+        c_type = self.c_type
 
         # Crossover
         child_vector = self.vector
