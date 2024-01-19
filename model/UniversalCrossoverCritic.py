@@ -1,4 +1,4 @@
-import keras
+from tensorflow import keras
 from keras import layers
 import tensorflow as tf
 import config
@@ -6,9 +6,17 @@ import keras_nlp
 import math
 import numpy as np
 from keras_nlp.layers import TransformerEncoder
+from keras_nlp.layers import TokenAndPositionEmbedding
+
+# import tensorflow_models as tfm
+
+
+
 # from keras_nlp.layers import TransformerDecoder
 from model.TransformerDecoder import TransformerDecoder
-from keras_nlp.layers import TokenAndPositionEmbedding
+# from tensorflow_models.nlp.models import TransformerDecoder
+
+
 
 # Vocabulary
 # 0: [pad]
@@ -17,7 +25,7 @@ from keras_nlp.layers import TokenAndPositionEmbedding
 # 3: 1-bit
 
 
-@keras.saving.register_keras_serializable(package="UniversalCrossoverCritic", name="UniversalCrossoverCritic")
+# @keras.saving.register_keras_serializable(package="UniversalCrossoverCritic", name="UniversalCrossoverCritic")
 class UniversalCrossoverCritic(tf.keras.Model):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -49,12 +57,18 @@ class UniversalCrossoverCritic(tf.keras.Model):
 
         # Decoder Stack
         self.normalize_first = False
-        self.decoder_1 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first,
-                                            name='decoder_1')
-        self.decoder_2 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_2')
+        self.decoder_1 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_1')
+        # self.decoder_2 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_2')
         # self.decoder_3 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_3')
         # self.decoder_4 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_4')
         # self.decoder_5 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_5')
+
+        # self.decoder_1 = TransformerDecoder(
+        #     num_layers=1,
+        #     num_attention_heads=self.num_heads,
+        #     intermediate_size=self.dense_dim
+        # )
+
 
         # Output Prediction Head
         self.output_modeling_head = layers.Dense(1, name='output_modeling_head')
@@ -75,10 +89,13 @@ class UniversalCrossoverCritic(tf.keras.Model):
         # 3. Decode design
         decoded_design = decisions_embedded
         decoded_design, attn_scores = self.decoder_1(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
-        decoded_design, attn_scores = self.decoder_2(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
+        # decoded_design, attn_scores = self.decoder_2(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
         # decoded_design = self.decoder_3(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
         # decoded_design = self.decoder_4(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
         # decoded_design = self.decoder_5(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
+
+        # decoded_design, attn_scores = self.decoder_1(decoded_design, pop_embedded,
+        #                                              use_causal_mask=True)
 
         # 4. Design Prediction Head
         design_prediction_logits = self.output_modeling_head(decoded_design)
@@ -128,7 +145,7 @@ class UniversalCrossoverCritic(tf.keras.Model):
 
 
 
-@keras.saving.register_keras_serializable(package="FastUniversalCrossoverCritic", name="FastUniversalCrossoverCritic")
+# @keras.saving.register_keras_serializable(package="FastUniversalCrossoverCritic", name="FastUniversalCrossoverCritic")
 class FastUniversalCrossoverCritic(tf.keras.Model):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

@@ -52,8 +52,8 @@ class GaMetaTrainer:
         self.save_path_critic = os.path.join(config.models_dir, 'universal_crossover_critic')
 
         # 2. Initialize optimizers
-        self.actor_optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.001)
-        self.critic_optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.001)
+        self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+        self.critic_optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 
         # 3. Initialize Task Parameters
         self.num_task_variations = num_task_variations
@@ -121,8 +121,8 @@ class GaMetaTrainer:
             self.run_parameters = pickle.load(f)
 
     def save_models(self):
-        actor_save_path = self.save_path_actor + '_{}'.format(self.epoch)
-        critic_save_path = self.save_path_critic + '_{}'.format(self.epoch)
+        actor_save_path = self.save_path_actor + '_{}.weights.h5'.format(self.epoch)
+        critic_save_path = self.save_path_critic + '_{}.weights.h5'.format(self.epoch)
         self.actor.save_weights(actor_save_path)
         self.critic.save_weights(critic_save_path)
         return actor_save_path, critic_save_path
@@ -159,8 +159,9 @@ class GaMetaTrainer:
         all_algs = []
         all_actor_params = []
         all_critic_params = []
+        all_start_nfe = list(range(0, 5001, 500))
         for task, task_idx in zip(train_tasks, task_indices):
-            start_nfe = random.randint(0, 5000)
+            start_nfe = random.choice(all_start_nfe)
             debug = len(all_algs) == 0
             alg = GA_Task(
                 run_num=task_idx,

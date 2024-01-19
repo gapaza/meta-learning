@@ -4,10 +4,13 @@ from datetime import datetime
 import platform
 import json
 
-
 # CPU vs GPU
 import tensorflow as tf
 tf.config.set_visible_devices([], 'GPU')
+
+# Set to use legacy keras
+# os.environ['TF_USE_LEGACY_KERAS'] = '1'
+# os.environ["KERAS_BACKEND"] = "tensorflow"
 
 
 

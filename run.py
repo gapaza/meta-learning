@@ -13,10 +13,17 @@ if __name__ == '__main__':
     # set multiprocessing start method to
     mp.set_start_method('spawn')
 
+
+    checkpoint_path_actor = None
+    checkpoint_path_critic = None
+    model_num = None
+    if model_num is not None:
+        checkpoint_path_actor = os.path.join(config.models_dir, 'universal_crossover_actor_' + str(model_num))
+        checkpoint_path_critic = os.path.join(config.models_dir, 'universal_crossover_critic_' + str(model_num))
+
+
     num_task_variations = 100
     new_tasks = False
-    checkpoint_path_actor = None  # os.path.join(config.models_dir, 'universal_crossover_actor_20')  # None
-    checkpoint_path_critic = None  # os.path.join(config.models_dir, 'universal_crossover_critic_20')  # None
     task_sample_size = 1
     task_epochs = 10
     trainer = GaMetaTrainer(

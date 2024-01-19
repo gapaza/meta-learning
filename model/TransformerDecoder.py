@@ -1,16 +1,8 @@
-# Copyright 2023 The KerasNLP Authors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# WITH ATTENTION OUTPUT :)
+
+
+
+
 
 """Transformer decoder block implementation based on `keras.layers.Layer`."""
 
@@ -423,12 +415,18 @@ class TransformerDecoder(keras.layers.Layer):
         self_attention_cache,
         self_attention_cache_update_index,
     ):
+        print('--> COMPUTING SELF ATTENTION MASK')
+        print(decoder_sequence.shape)
+        # print(decoder_attention_mask.shape)
+        # print(decoder_padding_mask.shape)
         decoder_mask = merge_padding_and_attention_mask(
             decoder_sequence, decoder_padding_mask, decoder_attention_mask
         )
+        print('- decoder mask:', decoder_mask.shape)
+
         if use_causal_mask:
             batch_size = ops.shape(decoder_sequence)[0]
-            input_length = output_length = ops.shape(decoder_sequence)[1]
+            input_length = output_length = ops.shape(decoder_sequence)[1]  # 60
             # We need to handle a rectangular causal mask when doing cached
             # decoding. For generative inference, `decoder_sequence` will
             # generally be length 1, and `cache` will be the full generation length.
@@ -443,6 +441,9 @@ class TransformerDecoder(keras.layers.Layer):
                 if self_attention_cache_update_index is None
                 else self_attention_cache_update_index,
             )
+            print('- causal mask:', causal_mask.shape)
+
+
             return (
                 ops.minimum(decoder_mask, causal_mask)
                 if decoder_mask is not None

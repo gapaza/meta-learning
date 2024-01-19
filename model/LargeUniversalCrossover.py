@@ -1,15 +1,15 @@
-import keras
+from tensorflow import keras
 from keras import layers
 import tensorflow as tf
 import config
-import keras_nlp
+# import keras_nlp
 import math
 import numpy as np
-from keras_nlp.layers import TransformerEncoder
 
 
+# from keras_nlp.layers import TransformerEncoder
 # from keras_nlp.layers import TransformerDecoder
-from model.TransformerDecoder import TransformerDecoder
+# from model.TransformerDecoder import TransformerDecoder
 
 from keras_nlp.layers import TokenAndPositionEmbedding
 
@@ -19,7 +19,7 @@ from keras_nlp.layers import TokenAndPositionEmbedding
 # 2: 0-bit
 # 3: 1-bit
 
-@keras.saving.register_keras_serializable(package="LargeUniversalCrossover", name="LargeUniversalCrossover")
+# @keras.saving.register_keras_serializable(package="LargeUniversalCrossover", name="LargeUniversalCrossover")
 class LargeUniversalCrossover(tf.keras.Model):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -121,7 +121,7 @@ class LargeUniversalCrossover(tf.keras.Model):
 
 
 
-@keras.saving.register_keras_serializable(package="LargeUniversalCrossoverCritic", name="LargeUniversalCrossoverCritic")
+# @keras.saving.register_keras_serializable(package="LargeUniversalCrossoverCritic", name="LargeUniversalCrossoverCritic")
 class LargeUniversalCrossoverCritic(tf.keras.Model):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

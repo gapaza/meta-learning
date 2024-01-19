@@ -31,8 +31,8 @@ class AbstractTask(mp.Process):
             os.makedirs(self.run_dir)
 
         # Save file (when finished)
-        self.actor_save_path = os.path.join(self.run_dir, 'actor_weights')
-        self.critic_save_path = os.path.join(self.run_dir, 'critic_weights')
+        self.actor_save_path = os.path.join(self.run_dir, 'actor_weights.weights.h5')
+        self.critic_save_path = os.path.join(self.run_dir, 'critic_weights.weights.h5')
 
         # Optimizers and models initialized when new process is created
         self.actor_optimizer = None

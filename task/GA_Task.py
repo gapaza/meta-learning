@@ -92,7 +92,6 @@ class GA_Task(AbstractTask):
         )
         self.random_search = task_runner.run()
 
-
     def build(self):
 
         # Optimizer parameters
@@ -101,9 +100,9 @@ class GA_Task(AbstractTask):
         self.train_actor_iterations = 120
         self.train_critic_iterations = 20
         if self.actor_optimizer is None:
-            self.actor_optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=self.actor_learning_rate)
+            self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate=self.actor_learning_rate)
         if self.critic_optimizer is None:
-            self.critic_optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=self.critic_learning_rate)
+            self.critic_optimizer = tf.keras.optimizers.Adam(learning_rate=self.critic_learning_rate)
 
         self.c_actor, self.c_critic = get_universal_crossover(self.actor_load_path, self.critic_load_path)
 
@@ -126,7 +125,7 @@ class GA_Task(AbstractTask):
             # 1. Create offspring
             epoch_info = self.create_offspring()
 
-            # 2. Evaluate offspring
+            # 2. Evaluate offspringr
             self.eval_population()
 
             # 3. Prune population
@@ -281,7 +280,6 @@ class GA_Task(AbstractTask):
             offspring.append(child)
         return offspring, None
 
-
     # -------------------------------------
     # PPO Functions
     # -------------------------------------
@@ -335,6 +333,7 @@ class GA_Task(AbstractTask):
     def run_mini_batch(self, mini_batch):
         children = []
         buffer = self.new_buffer()
+        self.c_actor.new_cache()
 
         all_last_values = []
         all_actions = [[] for _ in range(self.mini_batch_size)]
@@ -357,10 +356,13 @@ class GA_Task(AbstractTask):
         for t in range(self.steps_per_design):
 
             # 1. Sample actor
+            print('--> SAMPLING ACTOR')
+            curr_time = time.time()
             action_log_prob, action, attn_scores = self.sample_actor(observation, parent_obs, parent_obs_pos)  # returns shape: (batch,) and (batch,)
             if t == 0:
                 # We are looking at the first design in the batch
                 self.plot_attention_scores(attn_scores, mini_batch[0], parent_obs)
+            print('--> ACTOR GEN TIME:', time.time() - curr_time)
 
 
             # 2. Update observation for each batch element
@@ -541,6 +543,9 @@ class GA_Task(AbstractTask):
     def sample_actor(self, observation, parent_obs, parent_obs_pos):
         inf_idx = len(observation[0]) - 1  # all batch elements have the same length
         observation_input = deepcopy(observation)
+        # for obs_element in observation_input:
+        #     while len(obs_element) < self.steps_per_design:
+        #         obs_element.append(0)
         observation_input = tf.convert_to_tensor(observation_input, dtype=tf.float32)
         parent_input = tf.convert_to_tensor(parent_obs, dtype=tf.float32)
         parent_pos_input = tf.convert_to_tensor(parent_obs_pos, dtype=tf.float32)
@@ -814,6 +819,9 @@ class GA_Task(AbstractTask):
 
 
     def plot_attention_scores(self, attn_scores, parent_pair, parent_obs):
+        if attn_scores is None:
+            return
+
         # print(attn_scores.shape)  # (30, 64, 60, 610)
         # - 30 is batch size
         # - 64 is number of heads

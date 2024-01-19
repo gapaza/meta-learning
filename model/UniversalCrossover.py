@@ -1,15 +1,17 @@
-import keras
+from tensorflow import keras
 from keras import layers
 import tensorflow as tf
 import config
 import keras_nlp
 import math
 import numpy as np
+import tensorflow_models as tfm
+
 from keras_nlp.layers import TransformerEncoder
-
-
 # from keras_nlp.layers import TransformerDecoder
 from model.TransformerDecoder import TransformerDecoder
+
+
 
 from keras_nlp.layers import TokenAndPositionEmbedding
 
@@ -19,7 +21,7 @@ from keras_nlp.layers import TokenAndPositionEmbedding
 # 2: 0-bit
 # 3: 1-bit
 
-@keras.saving.register_keras_serializable(package="UniversalCrossover", name="UniversalCrossover")
+# @keras.saving.register_keras_serializable(package="UniversalCrossover", name="UniversalCrossover")
 class UniversalCrossover(tf.keras.Model):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -49,13 +51,17 @@ class UniversalCrossover(tf.keras.Model):
             mask_zero=False
         )
 
+        # Population Encoder
+        self.encoder_1 = TransformerEncoder(self.dense_dim, self.num_heads)
+
         # Decoder Stack (5)
         self.normalize_first = False
+        self.decoder_layers = 1
         self.decoder_1 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_1')
-        self.decoder_2 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_2')
-        self.decoder_3 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_3')
-        self.decoder_4 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_4')
-        self.decoder_5 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_5')
+        # self.decoder_2 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_2')
+        # self.decoder_3 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_3')
+        # self.decoder_4 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_4')
+        # self.decoder_5 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_5')
 
         # Inheritance Prediction Head
         self.design_prediction_head = layers.Dense(
@@ -63,8 +69,27 @@ class UniversalCrossover(tf.keras.Model):
         )
         self.activation = layers.Activation('softmax', dtype='float32')
 
+        # --> CACHE
+        self.cache = None
+        self.new_cache()
+
+
+
+    def new_cache(self):
+        head_depth = int(self.embed_dim / self.num_heads)
+        batch_size = 100
+        self.cache = {
+            f'{i}': [
+                tf.zeros((100, 2, 60, 64, head_depth)),
+                tf.zeros((100, 2, 610, 64, head_depth))
+            ]
+            for i in range(self.decoder_layers)
+        }
+        self.cache['obs_embed'] = None
+        self.cache['cross_obs_embed'] = None
 
     def call(self, inputs, training=False, mask=None):
+        print('--> CALL')
         decisions, pop, pop_pos = inputs
         # decisions: (batch, 60)
         # pop:     (batch, 60 * pop_size + pop_size)
@@ -79,16 +104,48 @@ class UniversalCrossover(tf.keras.Model):
         # 3. Decode design
         decoded_design = decisions_embedded
         decoded_design, attn_scores = self.decoder_1(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
-        decoded_design, attn_scores_2 = self.decoder_2(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
-        decoded_design, attn_scores_3 = self.decoder_3(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
-        decoded_design, attn_scores_4 = self.decoder_4(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
-        decoded_design, attn_scores_5 = self.decoder_5(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
+        # decoded_design, attn_scores_2 = self.decoder_2(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
+        # decoded_design, attn_scores_3 = self.decoder_3(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
+        # decoded_design, attn_scores_4 = self.decoder_4(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
+        # decoded_design, attn_scores_5 = self.decoder_5(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
 
         # 4. Design Prediction Head
         design_prediction_logits = self.design_prediction_head(decoded_design)
         design_prediction = self.activation(design_prediction_logits)
 
-        return design_prediction, attn_scores_5
+        return design_prediction, attn_scores
+
+    @tf.function(input_signature=[
+        tf.TensorSpec(shape=(100, None), dtype=tf.float32),
+        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
+        tf.TensorSpec(shape=(), dtype=tf.int32),
+        tf.TensorSpec(shape=(100, 610, 64), dtype=tf.float32),
+    ])
+    def inference(self, decisions, pop, inf_idx, pop_embedded):
+        print('--> INF INDEX:', inf_idx)
+        print(decisions.shape)
+        print(pop.shape)
+        # decisions: (batch, 60)
+        # pop:     (batch, 60 * pop_size + pop_size)
+        # pop_pos: (batch, 60 * pop_size + pop_size)
+
+        # 1. Embed population
+        # pop_embedded = self.pop_embedding_layer(pop, training=False)  # shape (batch, 60 * pop_size + pop_size, embed_dim)
+        # pop_embedded = self.encoder_1(pop_embedded)
+
+        # 2. Embed decisions
+        decisions_embedded = self.decision_embedding_layer(decisions, training=False)  # shape (batch, 60, embed_dim)
+
+        # 3. Decode design
+        decoded_design = decisions_embedded
+        decoded_design, attn_scores = self.decoder_1(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
+
+
+        # 4. Design Prediction Head
+        design_prediction_logits = self.design_prediction_head(decoded_design)
+        design_prediction = self.activation(design_prediction_logits)
+
+        return design_prediction, attn_scores
 
     # ---------------------------------------
     # Config
@@ -117,7 +174,9 @@ class UniversalCrossover(tf.keras.Model):
 
 
 
-@keras.saving.register_keras_serializable(package="FastUniversalCrossover", name="FastUniversalCrossover")
+
+
+# @keras.saving.register_keras_serializable(package="FastUniversalCrossover", name="FastUniversalCrossover")
 class FastUniversalCrossover(tf.keras.Model):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -144,8 +203,8 @@ class FastUniversalCrossover(tf.keras.Model):
 
         # Decoder Stack
         self.normalize_first = False
-        self.decoder_1 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first,
-                                            name='decoder_1')
+        self.decoder_1 = CustomTransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first,
+                                                  name='decoder_1')
         # self.decoder_2 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_2')
         # self.decoder_3 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_3')
         # self.decoder_4 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_4')

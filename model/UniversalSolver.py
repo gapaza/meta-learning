@@ -1,4 +1,4 @@
-import keras
+from tensorflow import keras
 from keras import layers
 import tensorflow as tf
 import config
@@ -19,7 +19,7 @@ from keras_nlp.layers import TokenAndPositionEmbedding
 # 2: 0-bit
 # 3: 1-bit
 
-@keras.saving.register_keras_serializable(package="UniversalSolver", name="UniversalSolver")
+# @keras.saving.register_keras_serializable(package="UniversalSolver", name="UniversalSolver")
 class UniversalSolver(tf.keras.Model):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -95,7 +95,7 @@ class UniversalSolver(tf.keras.Model):
         self.trainable = trainable
 
 
-@keras.saving.register_keras_serializable(package="UniversalSolverCritic", name="UniversalSolverCritic")
+# @keras.saving.register_keras_serializable(package="UniversalSolverCritic", name="UniversalSolverCritic")
 class UniversalSolverCritic(tf.keras.Model):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
