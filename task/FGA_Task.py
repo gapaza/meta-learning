@@ -18,17 +18,22 @@ from task.AbstractTask import AbstractTask
 from buffer.CrossoverBuffer import CrossoverBuffer
 from design.BitVector import BitVector as Design
 import utils
+import scipy.signal
 
 
 from task.Alg_Task import Alg_Task
 
 
+def discounted_cumulative_sums(x, discount):
+    # Discounted cumulative sums of vectors for computing rewards-to-go and advantage estimates
+    return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
 
-class GA_Task(AbstractTask):
+
+class FGA_Task(AbstractTask):
 
     def __init__(self, run_num=0, barrier=None, problem=None, limit=50, actor_load_path=None, critic_load_path=None, debug=False, c_type='uniform', start_nfe=0):
-        super(GA_Task, self).__init__(run_num, barrier, problem, limit, actor_load_path, critic_load_path)
+        super(FGA_Task, self).__init__(run_num, barrier, problem, limit, actor_load_path, critic_load_path)
         self.debug = debug
         self.c_type = c_type
         self.start_nfe = start_nfe
@@ -42,8 +47,8 @@ class GA_Task(AbstractTask):
 
         # Algorithm parameters
         self.pop_size = 30  # 32 FU_NSGA2, 10 U_NSGA2
-        self.offspring_size = 100  # 32 FU_NSGA2, 30 U_NSGA2
-        self.mini_batch_size = 100
+        self.offspring_size = 30  # 32 FU_NSGA2, 30 U_NSGA2
+        self.mini_batch_size = 30
         self.num_cross_obs_designs = 10
         self.max_nfe = 6000
         self.nfe = 0
@@ -55,7 +60,7 @@ class GA_Task(AbstractTask):
         self.lam = 0.95
         self.clip_ratio = 0.2
         self.target_kl = 0.01
-        self.entropy_coef = 0.1
+        self.entropy_coef = 0.0  # was 0.1 for large exploration
         self.counter = 0
         self.decision_start_token_id = 1
         self.num_actions = 2
@@ -96,10 +101,10 @@ class GA_Task(AbstractTask):
     def build(self):
 
         # Optimizer parameters
-        self.actor_learning_rate = 0.0003
-        self.critic_learning_rate = 0.001
+        self.actor_learning_rate = 0.00001
+        self.critic_learning_rate = 0.00001
         self.train_actor_iterations = 120
-        self.train_critic_iterations = 20
+        self.train_critic_iterations = 25
         if self.actor_optimizer is None:
             self.actor_optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=self.actor_learning_rate)
         if self.critic_optimizer is None:
@@ -267,7 +272,8 @@ class GA_Task(AbstractTask):
 
     def crossover_parents(self, parent_pairs):
         mini_batch = parent_pairs
-        children, epoch_info = self.run_mini_batch(mini_batch)
+        # children, epoch_info = self.run_mini_batch(mini_batch)
+        children, epoch_info = self.fast_mini_batch(mini_batch)
         return children, epoch_info
 
     def crossover_parents_init(self, parent_pairs):
@@ -331,6 +337,186 @@ class GA_Task(AbstractTask):
             pop_pos_vector.extend([idx+1 for _ in range(len(design.vector) + 1)])
 
         return pop_vector, pop_pos_vector
+
+    def fast_mini_batch(self, mini_batch):
+        children = []
+
+        all_total_rewards = []
+        all_actions = [[] for _ in range(self.mini_batch_size)]
+        all_rewards = [[] for _ in range(self.mini_batch_size)]
+        all_logprobs = [[] for _ in range(self.mini_batch_size)]
+
+        designs = [[] for x in range(self.mini_batch_size)]
+        epoch_designs = []
+        observation = [[self.decision_start_token_id] for x in range(self.mini_batch_size)]
+        critic_observation_buffer = [[] for x in range(self.mini_batch_size)]
+
+        # Preprocess cross attention observation input
+        parent_obs = []
+        for pair in mini_batch:
+            pop_vector, pop_pos_vector = self.get_cross_obs(pair[0], pair[1])
+            parent_obs.append(pop_vector)
+
+        # -------------------------------------
+        # Sample Actor
+        # -------------------------------------
+
+        start_gen = time.time()
+        for t in range(self.steps_per_design):
+            action_log_prob, action, attn_scores = self.sample_actor(observation, parent_obs)  # returns shape: (batch,) and (batch,)
+            action_log_prob = action_log_prob.numpy().tolist()
+            if t == 0:
+                # We are looking at the first design in the batch
+                self.plot_attention_scores(attn_scores, mini_batch[0], parent_obs)
+
+            observation_new = deepcopy(observation)
+            for idx, act in enumerate(action.numpy()):
+
+                # Get action (either inherit from parent a or b)
+                all_actions[idx].append(deepcopy(act))
+                all_logprobs[idx].append(action_log_prob[idx])
+                ppair = mini_batch[idx]
+                m_action = int(deepcopy(act))
+
+                # Get parent bit
+                p1_bit = ppair[0].vector[t]
+                p2_bit = ppair[1].vector[t]
+                if m_action == 0:
+                    m_bit = p1_bit
+                elif m_action == 1:
+                    m_bit = p2_bit
+                else:
+                    raise ValueError('--> INVALID ACTION VALUE:', act)
+                designs[idx].append(m_bit)
+                observation_new[idx].append(m_action + 2)
+
+            # Determine reward for each batch element
+            if len(designs[0]) == self.steps_per_design:
+                done = True
+                for idx, design in enumerate(designs):
+
+                    # TODO: potentially move mutation operator somewhere else
+                    bit_idx = random.randint(0, self.steps_per_design - 1)  # ClimateCentric
+                    if design[bit_idx] == 0:
+                        design[bit_idx] = 1
+                    else:
+                        design[bit_idx] = 0
+
+                    # Record design
+                    design_bitstr = ''.join([str(bit) for bit in design])
+                    epoch_designs.append(design_bitstr)
+
+                    # Evaluate design
+                    reward, design_obj = self.calc_reward(design_bitstr)
+                    all_rewards[idx].append(reward)
+                    children.append(design_obj)
+                    all_total_rewards.append(reward)
+            else:
+                done = False
+                reward = 0.0
+                for idx, _ in enumerate(designs):
+                    all_rewards[idx].append(reward)
+
+            # Update the observation
+            if done is True:
+                critic_observation_buffer = deepcopy(observation_new)
+            else:
+                observation = observation_new
+        print('--> ACTOR TIME:', round(time.time() - start_gen, 3))
+        print(observation[0])
+        print(observation[-1])
+
+        # -------------------------------------
+        # Sample Critic
+        # -------------------------------------
+        start_critic = time.time()
+        value_t = self.sample_critic(critic_observation_buffer, parent_obs).numpy()
+        value_t = value_t.tolist()  # (100, 61)
+        for idx, value in enumerate(value_t):
+            all_rewards[idx].append(value[-1])
+        print('--> CRITIC TIME:', round(time.time() - start_critic, 3))
+
+        # -------------------------------------
+        # Calculate Advantage and Return
+        # -------------------------------------
+        proc_time = time.time()
+        all_advantages = [[] for _ in range(self.mini_batch_size)]
+        all_returns = [[] for _ in range(self.mini_batch_size)]
+        for idx in range(len(all_rewards)):
+            rewards = np.array(all_rewards[idx])
+            values = np.array(value_t[idx])
+            deltas = rewards[:-1] + self.gamma * values[1:] - values[:-1]
+            adv_tensor = discounted_cumulative_sums(
+                deltas, self.gamma * self.lam
+            )
+            all_advantages[idx] = adv_tensor
+            ret_tensor = discounted_cumulative_sums(
+                rewards, self.gamma
+            )  # [:-1]
+            ret_tensor = np.array(ret_tensor, dtype=np.float32)
+            all_returns[idx] = ret_tensor
+        advantage_mean, advantage_std = (
+            np.mean(all_advantages),
+            np.std(all_advantages),
+        )
+        all_advantages = (all_advantages - advantage_mean) / advantage_std
+
+        observation_tensor = tf.convert_to_tensor(observation, dtype=tf.float32)
+        action_tensor = tf.convert_to_tensor(all_actions, dtype=tf.int32)
+        logprob_tensor = tf.convert_to_tensor(all_logprobs, dtype=tf.float32)
+        advantage_tensor = tf.convert_to_tensor(all_advantages, dtype=tf.float32)
+        cross_obs = tf.convert_to_tensor(parent_obs, dtype=tf.float32)
+
+        critic_observation_tensor = tf.convert_to_tensor(critic_observation_buffer, dtype=tf.float32)
+        return_tensor = tf.convert_to_tensor(all_returns, dtype=tf.float32)
+        print('--> ADV/RET TIME:', round(time.time() - proc_time, 3))
+
+        # -------------------------------------
+        # Train Actor
+        # -------------------------------------
+        curr_time = time.time()
+        policy_update_itr = 0
+        for i in range(self.train_actor_iterations):
+            policy_update_itr += 1
+            kl, entr, policy_loss, actor_loss = self.train_actor(
+                observation_tensor,
+                action_tensor,
+                logprob_tensor,
+                advantage_tensor,
+                cross_obs,
+            )
+            if kl > 1.5 * self.target_kl:
+                # Early Stopping
+                break
+        print('--> ACTOR TRAIN TIME:', round(time.time() - curr_time, 3))
+        # print('--> KL:', kl.numpy())
+        # print('--> ENTROPY:', entr.numpy())
+        # print('--> POLICY LOSS:', policy_loss.numpy())
+        # print('--> ACTOR LOSS:', actor_loss.numpy())
+
+        # -------------------------------------
+        # Train Critic
+        # -------------------------------------
+        curr_time = time.time()
+        for i in range(self.train_critic_iterations):
+            value_loss = self.train_critic(
+                critic_observation_buffer,
+                return_tensor,
+                parent_obs,
+            )
+        print('--> CRITIC TRAIN TIME:', round(time.time() - curr_time, 3))
+        # print('--> VALUE LOSS:', value_loss.numpy())
+
+        # Update results tracker
+        epoch_info = {
+            'mb_return': np.mean(all_total_rewards),
+            'c_loss': value_loss.numpy(),
+            'p_loss': policy_loss.numpy(),
+            'p_iter': policy_update_itr,
+            'entropy': entr.numpy(),
+            'kl': kl.numpy()
+        }
+        return children, epoch_info
 
     def run_mini_batch(self, mini_batch):
         children = []
@@ -538,24 +724,23 @@ class GA_Task(AbstractTask):
     # Actor-Critic Functions
     # -------------------------------------
 
-    def sample_actor(self, observation, parent_obs, parent_obs_pos):
+    def sample_actor(self, observation, parent_obs):
         inf_idx = len(observation[0]) - 1  # all batch elements have the same length
         observation_input = deepcopy(observation)
         observation_input = tf.convert_to_tensor(observation_input, dtype=tf.float32)
         parent_input = tf.convert_to_tensor(parent_obs, dtype=tf.float32)
-        parent_pos_input = tf.convert_to_tensor(parent_obs_pos, dtype=tf.float32)
         inf_idx = tf.convert_to_tensor(inf_idx, dtype=tf.int32)
-        return self._sample_actor(observation_input, parent_input, parent_pos_input, inf_idx)
+        return self._sample_actor(observation_input, parent_input, inf_idx)
 
     @tf.function(input_signature=[
-        tf.TensorSpec(shape=(100, None), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
+        tf.TensorSpec(shape=(30, None), dtype=tf.float32),
+        tf.TensorSpec(shape=(30, 610), dtype=tf.float32),
         tf.TensorSpec(shape=(), dtype=tf.int32)
     ])
-    def _sample_actor(self, observation_input, parent_input, parent_pos_input, inf_idx):
+    def _sample_actor(self, observation_input, parent_input, inf_idx):
         # print('sampling actor', inf_idx)
-        pred_probs, attn_scores = self.c_actor([observation_input, parent_input, parent_pos_input])
+        # pred_probs, attn_scores = self.c_actor([observation_input, parent_input, parent_pos_input])
+        pred_probs, attn_scores = self.c_actor.inference(observation_input, parent_input, inf_idx)
 
         # Batch sampling
         all_token_probs = pred_probs[:, inf_idx, :]  # shape (batch, 2)
@@ -570,33 +755,40 @@ class GA_Task(AbstractTask):
 
         return actions_log_prob, actions, attn_scores
 
-    def sample_critic(self, observation, parent_obs, parent_obs_pos):
+
+
+
+    def sample_critic(self, observation, parent_obs):
         inf_idx = len(observation[0]) - 1
         observation_input = tf.convert_to_tensor(observation, dtype=tf.float32)
         parent_input = tf.convert_to_tensor(parent_obs, dtype=tf.float32)
-        parent_pos_input = tf.convert_to_tensor(parent_obs_pos, dtype=tf.float32)
         inf_idx = tf.convert_to_tensor(inf_idx, dtype=tf.int32)
-        return self._sample_critic(observation_input, parent_input, parent_pos_input, inf_idx)
+        return self._sample_critic(observation_input, parent_input, inf_idx)
 
     @tf.function(input_signature=[
-        tf.TensorSpec(shape=(100, None), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
+        tf.TensorSpec(shape=(30, None), dtype=tf.float32),
+        tf.TensorSpec(shape=(30, 610), dtype=tf.float32),
         tf.TensorSpec(shape=(), dtype=tf.int32)
     ])
-    def _sample_critic(self, observation_input, parent_input, parent_pos_input, inf_idx):
-        t_value, attn_scores = self.c_critic([observation_input, parent_input, parent_pos_input])
+    def _sample_critic(self, observation_input, parent_input, inf_idx):
+        t_value, attn_scores = self.c_critic.inference(observation_input, parent_input, inf_idx)
         t_value = tf.squeeze(t_value, axis=-1)
-        t_value = t_value[:, inf_idx]
+        # t_value = t_value[:, inf_idx]
         return t_value
 
+
+
+
+
+
+
+
     @tf.function(input_signature=[
-        tf.TensorSpec(shape=(100, 60), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 60), dtype=tf.int32),
-        tf.TensorSpec(shape=(100, 60), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 60), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32)
+        tf.TensorSpec(shape=(30, 60), dtype=tf.float32),
+        tf.TensorSpec(shape=(30, 60), dtype=tf.int32),
+        tf.TensorSpec(shape=(30, 60), dtype=tf.float32),
+        tf.TensorSpec(shape=(30, 60), dtype=tf.float32),
+        tf.TensorSpec(shape=(30, 610), dtype=tf.float32),
     ])
     def train_actor(
             self,
@@ -605,7 +797,6 @@ class GA_Task(AbstractTask):
             logprobability_buffer,
             advantage_buffer,
             parent_buffer,
-            pop_vector
     ):
         # print('-- TRAIN ACTOR --')
         # print('observation buffer:', observation_buffer.shape)
@@ -616,7 +807,7 @@ class GA_Task(AbstractTask):
         # print('pop vector:', pop_vector.shape)
 
         with tf.GradientTape() as tape:
-            pred_probs, attn_scores = self.c_actor([observation_buffer, parent_buffer, pop_vector])
+            pred_probs, attn_scores = self.c_actor([observation_buffer, parent_buffer])
             pred_log_probs = tf.math.log(pred_probs)
             logprobability = tf.reduce_sum(
                 tf.one_hot(action_buffer, self.num_actions) * pred_log_probs, axis=-1
@@ -648,7 +839,7 @@ class GA_Task(AbstractTask):
         self.actor_optimizer.apply_gradients(zip(policy_grads, self.c_actor.trainable_variables))
 
         #  KL Divergence
-        pred_probs, attn_scores = self.c_actor([observation_buffer, parent_buffer, pop_vector])
+        pred_probs, attn_scores = self.c_actor([observation_buffer, parent_buffer])
         pred_log_probs = tf.math.log(pred_probs)
         logprobability = tf.reduce_sum(
             tf.one_hot(action_buffer, self.num_actions) * pred_log_probs, axis=-1
@@ -660,22 +851,20 @@ class GA_Task(AbstractTask):
         return kl, entr, policy_loss, loss
 
     @tf.function(input_signature=[
-        tf.TensorSpec(shape=(100, 61), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 61), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32)
+        tf.TensorSpec(shape=(30, 61), dtype=tf.float32),
+        tf.TensorSpec(shape=(30, 61), dtype=tf.float32),
+        tf.TensorSpec(shape=(30, 610), dtype=tf.float32),
     ])
     def train_critic(
             self,
             observation_buffer,
             return_buffer,
             parent_buffer,
-            pop_vector
     ):
 
         with tf.GradientTape() as tape:  # Record operations for automatic differentiation.
             pred_values, attn_scores = self.c_critic(
-                [observation_buffer, parent_buffer, pop_vector])  # (batch, seq_len, 2)
+                [observation_buffer, parent_buffer])  # (batch, seq_len, 2)
             pred_values = tf.squeeze(pred_values, axis=-1)  # (batch, seq_len)
 
             # Value Loss (mse)
@@ -687,10 +876,10 @@ class GA_Task(AbstractTask):
         return value_loss
 
     @tf.function(input_signature=[
-        tf.TensorSpec(shape=(100, 61), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 61), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32),
-        tf.TensorSpec(shape=(100, 610), dtype=tf.float32)
+        tf.TensorSpec(shape=(30, 61), dtype=tf.float32),
+        tf.TensorSpec(shape=(30, 61), dtype=tf.float32),
+        tf.TensorSpec(shape=(30, 610), dtype=tf.float32),
+        tf.TensorSpec(shape=(30, 610), dtype=tf.float32)
     ])  # add num_iterations to the signature
     def train_critic_loop(self, observation_buffer, return_buffer, parent_buffer, pop_vector):
         total_value_loss = 0.0
@@ -847,7 +1036,7 @@ class GA_Task(AbstractTask):
         attention_vector = attn_scores[batch_index, head_index, query_index]
         attention_vector = attention_vector / tf.reduce_sum(attention_vector, axis=-1, keepdims=True)
         ax = sns.heatmap(attention_vector_mean_heads.numpy()[None, :], cmap='viridis', cbar=True)
-        plt.title(f'Attention Map (Averaged over heads, Query {query_index}) \n Parent 1: {p1_idx} {p1_idx_pop} | Parent 2: {p2_idx} {p2_idx_pop}')
+        plt.title(f'Attention Map (Averaged over heads, Query {query_index}) \n Parent 1: {p1_idx} - {p1_idx_pop} | Parent 2: {p2_idx} - {p2_idx_pop}')
         plt.xlabel('Key Positions')
         plt.ylabel('Query Positions')
 

@@ -18,7 +18,7 @@ if __name__ == '__main__':
     checkpoint_path_actor = None  # os.path.join(config.models_dir, 'universal_crossover_actor_20')  # None
     checkpoint_path_critic = None  # os.path.join(config.models_dir, 'universal_crossover_critic_20')  # None
     task_sample_size = 1
-    task_epochs = 10
+    task_epochs = 100
     trainer = GaMetaTrainer(
         num_task_variations=num_task_variations,
         new_tasks=new_tasks,

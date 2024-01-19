@@ -20,8 +20,9 @@ from problem.multi_objective.AbstractMultiKnapsack import AbstractMultiKnapsack
 # Models
 # ------------------------------------
 
-from task.GA_Task import GA_Task
+# from task.GA_Task import GA_Task
 # from task.LGA_Task import LGA_Task as GA_Task
+from task.FGA_Task import FGA_Task as GA_Task
 
 
 from model import get_universal_crossover
