@@ -198,11 +198,14 @@ class FGA_Task(AbstractTask):
     # Tournament Functions
     # -------------------------------------
 
-    def binary_tournament(self):
-        p1 = random.randrange(len(self.population))
-        p2 = random.randrange(len(self.population))
+    def binary_tournament(self, solutions=None):
+        if solutions is None:
+            solutions = list(range(len(self.population)))
+
+        p1 = random.choice(solutions)
+        p2 = random.choice(solutions)
         while p1 == p2:
-            p2 = random.randrange(len(self.population))
+            p2 = random.choice(solutions)
 
         player1 = self.population[p1]
         player2 = self.population[p2]
@@ -244,19 +247,24 @@ class FGA_Task(AbstractTask):
 
         # Set pareto rank and crowding distance
         fronts = self.nds.do(F)
+        ff_solns = []
         for k, front in enumerate(fronts, start=1):
             crowding_of_front = utils.calc_crowding_distance(F[front, :])
             for i, idx in enumerate(front):
                 self.population[idx].crowding_dist = crowding_of_front[i]
                 self.population[idx].rank = k
+                if k == 1:
+                    ff_solns.append(idx)
+        if len(ff_solns) > self.num_cross_obs_designs:
+            ff_solns = ff_solns[:self.num_cross_obs_designs]
 
         # Get parent pairs
         pairs = []
         while len(pairs) < self.offspring_size:
-            parent1_idx = self.binary_tournament()
-            parent2_idx = self.binary_tournament()
+            parent1_idx = self.binary_tournament(ff_solns)
+            parent2_idx = self.binary_tournament(ff_solns)
             while parent2_idx == parent1_idx:
-                parent2_idx = self.binary_tournament()
+                parent2_idx = self.binary_tournament(ff_solns)
             pairs.append([
                 self.population[parent1_idx],
                 self.population[parent2_idx]

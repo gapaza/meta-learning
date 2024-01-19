@@ -126,14 +126,17 @@ class Alg_Task(AbstractTask):
     # Tournament Functions
     # -------------------------------------
 
-    def binary_tournament(self):
-        p1 = random.randrange(len(self.population))
-        p2 = random.randrange(len(self.population))
-        while p1 == p2:
-            p2 = random.randrange(len(self.population))
+    def binary_tournament(self, solutions=None):
+        if solutions is None:
+            solutions = self.population
 
-        player1 = self.population[p1]
-        player2 = self.population[p2]
+        p1 = random.randrange(len(solutions))
+        p2 = random.randrange(len(solutions))
+        while p1 == p2:
+            p2 = random.randrange(len(solutions))
+
+        player1 = solutions[p1]
+        player2 = solutions[p2]
 
         winner_idx = compare(
             p1, player1.rank,
@@ -172,11 +175,16 @@ class Alg_Task(AbstractTask):
 
         # Set pareto rank and crowding distance
         fronts = self.nds.do(F)
+        ff_solns = []
         for k, front in enumerate(fronts, start=1):
             crowding_of_front = utils.calc_crowding_distance(F[front, :])
             for i, idx in enumerate(front):
                 self.population[idx].crowding_dist = crowding_of_front[i]
                 self.population[idx].rank = k
+                if k == 1:
+                    ff_solns.append(self.population[idx])
+        if len(ff_solns) > self.offspring_size:
+            ff_solns = ff_solns[:self.offspring_size]
 
         # Get parent pairs
         pairs = []

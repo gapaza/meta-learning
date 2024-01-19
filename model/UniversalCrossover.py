@@ -52,7 +52,7 @@ class UniversalCrossover(tf.keras.Model):
         # Decoder Stack (5)
         self.normalize_first = False
         self.decoder_1 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_1')
-        self.decoder_2 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_2')
+        # self.decoder_2 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_2')
         # self.decoder_3 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_3')
         # self.decoder_4 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_4')
         # self.decoder_5 = TransformerDecoder(self.dense_dim, self.num_heads, normalize_first=self.normalize_first, name='decoder_5')
@@ -79,7 +79,7 @@ class UniversalCrossover(tf.keras.Model):
         # 3. Decode design
         decoded_design = decisions_embedded
         decoded_design, attn_scores = self.decoder_1(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
-        decoded_design, attn_scores_2 = self.decoder_2(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
+        # decoded_design, attn_scores_2 = self.decoder_2(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
         # decoded_design, attn_scores_3 = self.decoder_3(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
         # decoded_design, attn_scores_4 = self.decoder_4(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
         # decoded_design, attn_scores_5 = self.decoder_5(decoded_design, encoder_sequence=pop_embedded, use_causal_mask=True)
@@ -107,8 +107,8 @@ class UniversalCrossover(tf.keras.Model):
         decoded_design = decisions_embedded
         decoded_design, attn_scores = self.decoder_1(decoded_design, encoder_sequence=pop_embedded,
                                                      use_causal_mask=True)
-        decoded_design, attn_scores_2 = self.decoder_2(decoded_design, encoder_sequence=pop_embedded,
-                                                       use_causal_mask=True)
+        # decoded_design, attn_scores_2 = self.decoder_2(decoded_design, encoder_sequence=pop_embedded,
+        #                                                use_causal_mask=True)
         # decoded_design, attn_scores_3 = self.decoder_3(decoded_design, encoder_sequence=pop_embedded,
         #                                                use_causal_mask=True)
         # decoded_design, attn_scores_4 = self.decoder_4(decoded_design, encoder_sequence=pop_embedded,
