@@ -14,7 +14,7 @@ from model.UniversalCrossoverCritic import UniversalCrossoverCritic
 
 def get_universal_crossover(checkpoint_path_actor=None, checkpoint_path_critic=None):
     pop_size = 10
-    design_len = 60
+    design_len = 30
     pop_input_len = design_len * pop_size + pop_size
 
     actor_model = UniversalCrossover()
@@ -135,6 +135,38 @@ def get_universal_solver(checkpoint_path_actor=None, checkpoint_path_critic=None
 
     return actor_model, critic_model
 
+
+
+
+
+# ---------------------------------------
+# Universal Solver MO
+# ---------------------------------------
+
+from model.UniversalSolverMO import UniversalSolverMO, UniversalSolverCriticMO
+
+def get_universal_solver_mo(checkpoint_path_actor=None, checkpoint_path_critic=None):
+    design_len = 30
+
+    actor_model = UniversalSolverMO()
+    decisions = tf.zeros((1, design_len))
+    weights = tf.zeros((1, 1))
+    actor_model([decisions, weights])
+
+    critic_model = UniversalSolverCriticMO()
+    decisions = tf.zeros((1, design_len + 1))
+    weights = tf.zeros((1, 1))
+    critic_model([decisions, weights])
+
+    # Load Weights
+    if checkpoint_path_actor:
+        actor_model.load_weights(checkpoint_path_actor).expect_partial()
+    if checkpoint_path_critic:
+        critic_model.load_weights(checkpoint_path_critic).expect_partial()
+
+    actor_model.summary()
+
+    return actor_model, critic_model
 
 
 

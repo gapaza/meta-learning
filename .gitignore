@@ -3,3 +3,5 @@ model/store/
 problem/store/
 __pycache__/
 .idea/
+.gradle
+build/

@@ -6,7 +6,7 @@ import time
 
 class BitVector:
 
-    def __init__(self, design_vector=None, evaluator=None, num_bits=60, c_type='uniform'):
+    def __init__(self, design_vector=None, evaluator=None, num_bits=30, c_type='uniform'):
         self.evaluator = evaluator
         self.num_bits = num_bits
         self.c_type = c_type  # values: random, point, uniform

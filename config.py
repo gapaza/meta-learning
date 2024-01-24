@@ -35,16 +35,18 @@ results_save_dir = os.path.join(results_dir, 'RUN')
 #######################
 # --> Bit Decoder <-- #
 #######################
-bd_num_weight_vecs = 4
-bd_embed_dim = 32
+bd_num_weight_vecs = 9
+bd_embed_dim = 16
 
 bd_actor_continuous_weights = True
 bd_actor_learn_weights = False
-bd_actor_dense = 512
-bd_actor_heads = 32
+bd_actor_dense = 256  # 256 best for truss so far
+bd_actor_heads = 16
 
+
+bd_critic_embed_dim = 16
 bd_critic_learn_weights = False
-bd_critic_dense = 512
+bd_critic_dense = 256
 bd_critic_heads = 16
 bd_critic_decoders = 1
 

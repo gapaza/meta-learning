@@ -19,6 +19,9 @@ from buffer.CrossoverBuffer import CrossoverBuffer
 from design.BitVector import BitVector as Design
 import utils
 
+from problem.multi_objective.ConstantTruss import ConstantTruss
+
+
 
 
 class Alg_Task(AbstractTask):
@@ -41,7 +44,7 @@ class Alg_Task(AbstractTask):
         self.max_nfe = max_nfe
         self.nfe = 0
         self.limit = limit
-        self.steps_per_design = 60  # 30 | 60
+        self.steps_per_design = 30  # 30 | 60
 
         # Population
         self.population = []
@@ -50,6 +53,11 @@ class Alg_Task(AbstractTask):
 
 
     def run(self):
+        results_file = os.path.join(self.run_dir, self.c_type + '.png')
+        if os.path.exists(results_file):
+            print('ALG TASK ALREADY COMPLETED:', self.run_num)
+            return []
+
         print('--> RUNNING ALG TASK:', self.run_num)
 
         self.init_population()
@@ -101,7 +109,12 @@ class Alg_Task(AbstractTask):
         for design in self.population:
             if design.evaluated is False:
                 self.nfe += 1
-            evals.append(design.evaluate())
+            vals = design.evaluate()
+            evals.append(vals)
+            design_str = design.get_vector_str()
+            if design_str not in self.unique_designs:
+                self.unique_designs.add(design_str)
+                self.unique_designs_vals.append(vals)
         return evals
 
     def prune_population(self):
@@ -216,6 +229,47 @@ class Alg_Task(AbstractTask):
     def record(self, epoch_info):
         self.hv.append(self.calc_pop_hv())
         self.nfes.append(self.nfe)
+
+
+    def plot(self):
+
+        # 1. Plot HV
+        plt.figure(figsize=(8, 8))
+        plt.plot(self.nfes, self.hv)
+        plt.xlabel('NFE')
+        plt.ylabel('HV')
+        plt.title('HV Progress')
+        plt.savefig(os.path.join(self.run_dir, self.c_type + '.png'))
+        plt.close('all')
+
+        # 2. Plot designs
+        plt.figure(figsize=(8, 8))
+        for obj_vals in self.unique_designs_vals:
+            plt.scatter(obj_vals[0] * -1.0, obj_vals[1], color='blue')
+        plt.xlabel('Vertical Stiffness')
+        plt.ylabel('Volume Fraction')
+        plt.title('Designs')
+        plt.savefig(os.path.join(self.run_dir, self.c_type + '_designs.png'))
+
+
+if __name__ == '__main__':
+    problem = ConstantTruss(n=30)
+    problem.init_problem(0, run_val=True)
+
+    task_runner = Alg_Task(
+        run_num=1000,
+        barrier=None,
+        problem=problem,
+        limit=1000,
+        actor_load_path=None,
+        critic_load_path=None,
+        c_type='uniform',
+        max_nfe=3000,
+    )
+    task_runner.run()
+    task_runner.plot()
+
+
 
 
 

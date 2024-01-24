@@ -28,11 +28,11 @@ class UniversalCrossoverCritic(tf.keras.Model):
         self.supports_masking = True
 
         # Variables
-        self.pop_seq_len = 610  # 310 | 610
-        self.gen_design_seq_length = 61  # 31 | 61
-        self.embed_dim = 256
+        self.pop_seq_len = 310  # 310 | 610
+        self.gen_design_seq_length = 31  # 31 | 61
+        self.embed_dim = 64
         self.num_heads = 64
-        self.dense_dim = 2048
+        self.dense_dim = 1024
         self.pop_size = 10
 
         # Decision Embedding
@@ -92,7 +92,7 @@ class UniversalCrossoverCritic(tf.keras.Model):
 
     @tf.function(input_signature=[
         tf.TensorSpec(shape=(30, None), dtype=tf.float32),
-        tf.TensorSpec(shape=(30, 610), dtype=tf.float32),
+        tf.TensorSpec(shape=(30, 310), dtype=tf.float32),
         tf.TensorSpec(shape=(), dtype=tf.int32)
     ])
     def inference(self, decisions, pop, inf_idx):
